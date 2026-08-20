@@ -134,11 +134,7 @@
         {
           "type": "git",
           "url": "https://github.com/kreed/kitty.git",
-          "commit": "eaaa842a6de4f013a9383061b4870259c8a78339"
-        },
-        {
-          "type": "patch",
-          "path": "patches/kitty/0001-Run-terminal-children-on-the-host.patch"
+          "commit": "d2d2714f8118d031926dd29d9f64b62567f530c4"
         },
         {
           "type": "archive",

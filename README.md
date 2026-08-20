@@ -23,42 +23,27 @@ The repo is a GPG-signed OSTree archive published to GitHub Pages by
 | `io.github.kreed.KittyChrome.json` | the manifest |
 | `io.github.kreed.KittyChrome.Devel.json` | same, but building kitty from a local worktree |
 | `io.github.kreed.KittyChrome.{metainfo.xml,desktop}` | AppStream metadata and launcher entry |
-| `patches/kitty/` | the host-children changes, applied to kitty at build time |
 | `src/` | `kitty-host-agent`, the host PTY bridge, the entry-point wrapper and the `host-bin` shims |
+
+Nothing here is a patch. kitty is built from a pinned `kreed/kitty` commit as it
+stands, and the Ptyxis agent from a pinned `kreed/ptyxis` tag whose changes are
+ordinary commits on that fork. If you find yourself reaching for a `.patch` file,
+it belongs as a commit in whichever fork owns the code.
 
 Three repos, one concern each:
 
-- **[kreed/kitty](https://github.com/kreed/kitty)** — the window chrome changes, and nothing else.
-- **[kreed/ptyxis](https://github.com/kreed/ptyxis)** — a mirror of upstream Ptyxis plus three
-  agent patches. Only `ptyxis-agent` is built from it; it is what creates host PTYs.
+- **[kreed/kitty](https://github.com/kreed/kitty)** — the fork itself: the window chrome
+  changes and the host-children support, as ordinary commits.
+- **[kreed/ptyxis](https://github.com/kreed/ptyxis)** — a mirror of upstream Ptyxis with three
+  agent commits on a `kitty-chrome` branch. Only `ptyxis-agent` is built from it; it is what
+  creates host PTYs.
 - **this repo** — packaging, publishing, and the host-children plumbing.
-
-## Why the host-children code is a patch and not upstream
-
-`patches/kitty/0001-Run-terminal-children-on-the-host.patch` touches
-`kitty/child.py`, `kitty/window.py`, `kitty_tests/child.py` and adds
-`kitty/host_spawn.py`. It lives here rather than in kreed/kitty so that the
-kitty fork's diff against upstream is *only* the chrome work and stays easy to
-rebase.
-
-The cost is that the patch needs refreshing whenever kreed/kitty rebases onto a
-newer upstream and `child.py` drifts. The refresh loop:
-
-```sh
-cd ../kitty-hostpty                       # a worktree kept for exactly this
-git am ../io.github.kreed.KittyChrome/patches/kitty/0001-*.patch
-# fix conflicts, then:
-git format-patch --no-signature --zero-commit -o ../io.github.kreed.KittyChrome/patches/kitty <base>..HEAD
-```
-
-`--zero-commit` keeps an unchanged patch byte-identical between regenerations.
 
 ## Developing
 
 `io.github.kreed.KittyChrome.Devel.json` swaps the pinned kitty git source for
-`{"type": "dir", "path": "../kitty-hostpty"}` and drops the patch entry, so the
-dev loop and the patch-refresh loop are the same activity: hack in the worktree,
-then regenerate the patch when you are happy.
+`{"type": "dir", "path": "../kitty"}`, so you can build whatever is in your
+local kitty checkout without pushing or moving the pin.
 
 ```sh
 flatpak run org.flatpak.Builder --force-clean --user --install-deps-from=flathub \
