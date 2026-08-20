@@ -1,0 +1,184 @@
+name: Flatpak
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  # kreed/kitty can ask for a rebuild without waiting for the nightly bump.
+  repository_dispatch:
+    types: [kitty-updated]
+
+permissions:
+  contents: read
+
+# One published repo, one deploy at a time. Superseded runs are cancelled
+# rather than queued: the site is a snapshot of a single commit, so an older
+# build finishing later would only publish something already stale.
+concurrency:
+  group: flatpak-pages
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+
+    steps:
+      - name: Check out packaging
+        uses: actions/checkout@v4
+
+      - name: Validate JSON
+        run: |
+          python3 -m json.tool io.github.kreed.KittyChrome.json > /dev/null
+          python3 -m json.tool io.github.kreed.KittyChrome.Devel.json > /dev/null
+
+      # flatpak-builder has no manifest inheritance, so the Devel variant is a
+      # full copy. Assert it differs from the real manifest in nothing but the
+      # kitty module's sources, rather than trusting anyone to remember.
+      - name: Check Devel manifest drift
+        run: |
+          blank='(.modules[] | select(.name=="kitty") | .sources) = []'
+          diff <(jq "$blank" io.github.kreed.KittyChrome.json) \
+               <(jq "$blank" io.github.kreed.KittyChrome.Devel.json)
+
+      - name: Validate metainfo and desktop entry
+        run: |
+          appstreamcli validate --explain io.github.kreed.KittyChrome.metainfo.xml
+          desktop-file-validate io.github.kreed.KittyChrome.desktop
+
+      - name: Lint manifest
+        run: flatpak-builder-lint manifest io.github.kreed.KittyChrome.json
+
+  build:
+    name: Build Flatpak
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+
+    steps:
+      - name: Check out packaging
+        uses: actions/checkout@v4
+
+      # No bundle: consumers install from the repo published below, and a
+      # second artifact would only be one more thing to keep in step.
+      - name: Build repo
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: io.github.kreed.KittyChrome.json
+          cache-key: flatpak-builder-${{ github.sha }}
+          repo-dir: repo
+          build-bundle: false
+          upload-artifact: false
+
+      # Tarred rather than handed to upload-artifact as a directory: an OSTree
+      # archive repo is thousands of small objects, and the artifact upload
+      # walks them one by one.
+      - name: Pack repo
+        run: tar -cf repo.tar repo
+
+      - name: Upload repo
+        uses: actions/upload-artifact@v4
+        with:
+          name: repo
+          path: repo.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Publish to Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    # Scoped to this job so the build, which runs third-party actions against a
+    # privileged container, keeps the read-only default token and never sees
+    # the signing key.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Install flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y flatpak ostree
+
+      - name: Download repo
+        uses: actions/download-artifact@v4
+        with:
+          name: repo
+
+      - name: Unpack repo
+        run: |
+          mkdir site
+          tar -xf repo.tar -C site
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      # Sign every ref, not just the summary. A client verifies the commit of
+      # each ref it pulls, so the .Locale and .Debug extensions need signatures
+      # as much as the app does -- and this runs BEFORE build-update-repo so
+      # the appstream refs that command creates are signed by it instead, with
+      # nothing signed twice.
+      - name: Sign and index the repo
+        env:
+          FLATPAK_GPG_KEY: ${{ secrets.FLATPAK_GPG_KEY }}
+        run: |
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          printf '%s' "$FLATPAK_GPG_KEY" | gpg --batch --quiet --import
+          keyid="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ { print $10; exit }')"
+          if [ -z "$keyid" ]; then
+            echo "FLATPAK_GPG_KEY did not yield a secret key" >&2
+            exit 1
+          fi
+
+          # Collected first rather than piped into the loop: inside a pipeline
+          # a failing signature would be swallowed and the run would publish a
+          # partly-unsigned repo.
+          refs="$(ostree --repo=site/repo refs)"
+          for ref in $refs; do
+            ostree --repo=site/repo gpg-sign --gpg-homedir="$GNUPGHOME" \
+              "$(ostree --repo=site/repo rev-parse "$ref")" "$keyid"
+          done
+
+          # Static deltas matter more here than in a normal repo: Pages serves
+          # the objects over plain HTTP with no range trickery, so without them
+          # an install is thousands of requests instead of one.
+          flatpak build-update-repo site/repo \
+            --title="Kitty Chrome" \
+            --homepage="https://github.com/kreed/io.github.kreed.KittyChrome" \
+            --generate-static-deltas \
+            --gpg-sign="$keyid" \
+            --gpg-homedir="$GNUPGHOME"
+
+          # The public half travels with the repo description, so a consumer
+          # adding the remote gets the key it will be verified against from the
+          # same place it gets the URL, and rotating the key is a CI secret
+          # change rather than an edit here.
+          {
+            echo "[Flatpak Repo]"
+            echo "Title=Kitty Chrome"
+            echo "Url=${{ steps.pages.outputs.base_url }}/repo/"
+            echo "Homepage=https://github.com/kreed/io.github.kreed.KittyChrome"
+            echo "Comment=kitty, forked for native window chrome and host children"
+            echo "GPGKey=$(gpg --export "$keyid" | base64 --wrap=0)"
+          } > site/kitty-chrome.flatpakrepo
+
+          rm -rf "$GNUPGHOME"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v4

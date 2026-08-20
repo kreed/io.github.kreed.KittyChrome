@@ -1,0 +1,87 @@
+name: Bump kitty pin
+
+# The manifest pins an exact kreed/kitty commit so builds are reproducible,
+# which also means a push to kreed/kitty ships nothing on its own. This closes
+# that gap: it moves the pin, proves the result builds, and only then commits.
+# The push to main is what triggers flatpak.yml to rebuild and publish.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bump-kitty
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump and verify
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out packaging
+        uses: actions/checkout@v4
+
+      - name: Resolve the tip of kreed/kitty
+        id: resolve
+        run: |
+          pinned="$(jq -r '.modules[] | select(.name=="kitty") | .sources[] | select(.type=="git") | .commit' \
+            io.github.kreed.KittyChrome.json)"
+          tip="$(git ls-remote https://github.com/kreed/kitty.git refs/heads/main | cut -f1)"
+          if [ -z "$tip" ]; then
+            echo "could not resolve kreed/kitty main" >&2
+            exit 1
+          fi
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+          echo "tip=$tip" >> "$GITHUB_OUTPUT"
+          if [ "$pinned" = "$tip" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already at $tip"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "$pinned -> $tip"
+          fi
+
+      # Both manifests are rewritten together; the Devel one only carries the
+      # pin so the drift check below keeps passing.
+      - name: Move the pin
+        if: steps.resolve.outputs.changed == 'true'
+        run: |
+          tmp="$(mktemp)"
+          jq --arg sha '${{ steps.resolve.outputs.tip }}' '
+            (.modules[] | select(.name=="kitty") | .sources[] | select(.type=="git") | .commit) = $sha
+          ' io.github.kreed.KittyChrome.json > "$tmp"
+          mv "$tmp" io.github.kreed.KittyChrome.json
+          git diff --stat
+
+      # A pin that does not build must never reach main, since main is what
+      # publishes.
+      - name: Build
+        if: steps.resolve.outputs.changed == 'true'
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: io.github.kreed.KittyChrome.json
+          cache-key: flatpak-builder-bump-${{ steps.resolve.outputs.tip }}
+          repo-dir: repo
+          build-bundle: false
+          upload-artifact: false
+
+      - name: Commit
+        if: steps.resolve.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add io.github.kreed.KittyChrome.json
+          git commit -m "Bump kitty to ${{ steps.resolve.outputs.tip }}
+
+          Verified to build before landing; the push republishes the repo."
+          git push

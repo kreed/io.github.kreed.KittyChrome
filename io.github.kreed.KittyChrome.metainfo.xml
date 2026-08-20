@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.kreed.KittyChrome</id>
+  <name>Kitty Chrome</name>
+  <summary>Terminal with compact native window chrome</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.kreed">
+    <name>Christopher Eby</name>
+  </developer>
+  <description>
+    <p>
+      Kitty Chrome packages the Kitty terminal with native Wayland GTK4
+      decorations and a compact, auto-hiding titlebar.
+    </p>
+    <p>
+      The window controls sit in a pop-over that overlays the grid instead of
+      reserving a strip above it, and appear only while the pointer is near
+      them, so the terminal runs to the top edge of the window.
+    </p>
+    <p>
+      Terminal children run on the host rather than inside the sandbox, on a
+      real host PTY, so shells, containers and SSH behave as they would outside
+      Flatpak.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.kreed.KittyChrome.desktop</launchable>
+  <url type="homepage">https://github.com/kreed/io.github.kreed.KittyChrome</url>
+  <url type="bugtracker">https://github.com/kreed/io.github.kreed.KittyChrome/issues</url>
+  <url type="vcs-browser">https://github.com/kreed/kitty</url>
+  <provides>
+    <binary>kitty-chrome</binary>
+  </provides>
+  <releases>
+    <release version="20260820" date="2026-08-20">
+      <description>
+        <p>
+          Packaging split into its own repository, and the Ptyxis agent no
+          longer leaves a spawned scope's process tree to systemd, which had
+          stalled every logout and reboot for 45 seconds.
+        </p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
