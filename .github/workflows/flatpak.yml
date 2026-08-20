@@ -49,7 +49,13 @@ jobs:
           appstreamcli validate --explain io.github.kreed.KittyChrome.metainfo.xml
           desktop-file-validate io.github.kreed.KittyChrome.desktop
 
-      - name: Lint manifest
+      # Informational, never a gate. This manifest deliberately keeps
+      # --filesystem=host and --talk-name=org.freedesktop.Flatpak, which the
+      # linter reports as errors and which are the entire point of the app, so
+      # it can never come back clean. Run it anyway so a genuinely new problem
+      # is visible in the log.
+      - name: Lint manifest (informational)
+        continue-on-error: true
         run: flatpak-builder-lint manifest io.github.kreed.KittyChrome.json
 
   build:

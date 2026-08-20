@@ -126,9 +126,10 @@
         "cp nerd-fonts/SymbolsNerdFontMono-Regular.ttf fonts/",
         "python3 setup.py linux-package --prefix=/app --update-check-interval=0 --shell-integration='enabled no-rc'",
         "rm -f /app/share/applications/kitty.desktop /app/share/applications/kitty-open.desktop",
+        "mv /app/share/icons/hicolor/256x256/apps/kitty.png /app/share/icons/hicolor/256x256/apps/io.github.kreed.KittyChrome.png",
+        "mv /app/share/icons/hicolor/scalable/apps/kitty.svg /app/share/icons/hicolor/scalable/apps/io.github.kreed.KittyChrome.svg",
         "rm -rf /app/go"
       ],
-      "rename-icon": "kitty",
       "sources": [
         {
           "type": "dir",
