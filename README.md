@@ -77,3 +77,17 @@ load-bearing here: the entire point is that terminal children run on the host
 via `flatpak-spawn --host`, so a terminal that could not reach the host would
 have no reason to exist. This is not a Flathub submission and is not intended
 to become one.
+
+CI lints the manifest and gates on the result, with the three errors this
+package will always produce listed in `.flatpak-builder-lint-exceptions.json`:
+
+- `finish-args-flatpak-spawn-access` and `finish-args-host-filesystem-access`
+  are the two holes above. Flathub grants Ptyxis, whose agent this package
+  builds, exceptions for exactly these two.
+- `appid-url-not-reachable` is the linter deriving `github.com/kreed/kittychrome`
+  from the app id and finding nothing, because the repository is named after
+  the id rather than the app. Renaming it would move the Pages URL that the
+  flatpakrepo file and every existing install point at, which is not worth
+  paying to satisfy a check that only binds a Flathub submission.
+
+Anything else the linter reports is new and fails the run.
