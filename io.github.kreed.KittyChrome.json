@@ -135,7 +135,7 @@
         {
           "type": "git",
           "url": "https://github.com/kreed/kitty.git",
-          "commit": "d2d2714f8118d031926dd29d9f64b62567f530c4"
+          "commit": "d03fdfb017ffd1dec8a093ac0da803f4eaff088e"
         },
         {
           "type": "archive",
