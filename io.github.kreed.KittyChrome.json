@@ -71,6 +71,14 @@
           "only-arches": [
             "x86_64"
           ]
+        },
+        {
+          "type": "archive",
+          "url": "https://go.dev/dl/go1.26.5.linux-arm64.tar.gz",
+          "sha256": "fe4789e92b1f33358680864bbe8704289e7bb5fc207d80623c308935bd696d49",
+          "only-arches": [
+            "aarch64"
+          ]
         }
       ]
     },
@@ -88,6 +96,14 @@
           "sha256": "427d9985aac9e88912429bf9e7c1a3543bf35a61aaa855c890eeb96920175e0c",
           "only-arches": [
             "x86_64"
+          ]
+        },
+        {
+          "type": "archive",
+          "url": "https://github.com/shader-slang/slang/releases/download/v2026.14.1/slang-2026.14.1-linux-aarch64-glibc-2.28.tar.gz",
+          "sha256": "ebbc011a210f16902c180ef82f94b3e5b52ea0c80d7827a8a830961be3aafa3c",
+          "only-arches": [
+            "aarch64"
           ]
         }
       ]

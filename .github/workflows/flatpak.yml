@@ -59,8 +59,15 @@ jobs:
             manifest io.github.kreed.KittyChrome.json
 
   build:
-    name: Build Flatpak
-    runs-on: ubuntu-24.04
+    name: Build Flatpak (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
@@ -75,7 +82,8 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: io.github.kreed.KittyChrome.json
-          cache-key: flatpak-builder-${{ github.sha }}
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ github.sha }}
           repo-dir: repo
           build-bundle: false
           upload-artifact: false
@@ -89,7 +97,7 @@ jobs:
       - name: Upload repo
         uses: actions/upload-artifact@v4
         with:
-          name: repo
+          name: repo-${{ matrix.arch }}
           path: repo.tar
           retention-days: 1
           if-no-files-found: error
@@ -114,15 +122,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y flatpak ostree
 
-      - name: Download repo
+      - name: Download repos
         uses: actions/download-artifact@v4
         with:
-          name: repo
+          pattern: repo-*
 
-      - name: Unpack repo
+      - name: Merge repos
         run: |
           mkdir site
-          tar -xf repo.tar -C site
+          ostree --repo=site/repo init --mode=archive-z2
+          for dir in repo-*/; do
+            mkdir "$dir/unpacked"
+            tar -xf "$dir/repo.tar" -C "$dir/unpacked"
+            ostree --repo=site/repo pull-local "$dir/unpacked/repo"
+          done
+          ostree --repo=site/repo refs
 
       - name: Configure Pages
         id: pages
