@@ -63,6 +63,14 @@ jobs:
           mv "$tmp" io.github.kreed.KittyChrome.json
           git diff --stat
 
+      # See flatpak.yml: the image's SDK cannot be updated in place.
+      - name: Make the flatpak installation writable
+        if: steps.resolve.outputs.changed == 'true'
+        run: |
+          cp -a /var/lib/flatpak /var/lib/flatpak.copy
+          rm -rf /var/lib/flatpak
+          mv /var/lib/flatpak.copy /var/lib/flatpak
+
       # A pin that does not build must never reach main, since main is what
       # publishes.
       - name: Build
