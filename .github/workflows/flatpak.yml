@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Check out packaging
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate JSON
         run: |
@@ -49,19 +49,32 @@ jobs:
           appstreamcli validate --explain io.github.kreed.KittyChrome.metainfo.xml
           desktop-file-validate io.github.kreed.KittyChrome.desktop
 
+      # A gate again, but only for errors we have not already accepted. The
+      # three in the exceptions file are permanent by design (see README);
+      # anything else is news and should stop the run.
       - name: Lint manifest
-        run: flatpak-builder-lint manifest io.github.kreed.KittyChrome.json
+        run: |
+          flatpak-builder-lint --exceptions \
+            --user-exceptions .flatpak-builder-lint-exceptions.json \
+            manifest io.github.kreed.KittyChrome.json
 
   build:
-    name: Build Flatpak
-    runs-on: ubuntu-24.04
+    name: Build Flatpak (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
 
     steps:
       - name: Check out packaging
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # No bundle: consumers install from the repo published below, and a
       # second artifact would only be one more thing to keep in step.
@@ -69,7 +82,8 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: io.github.kreed.KittyChrome.json
-          cache-key: flatpak-builder-${{ github.sha }}
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ github.sha }}
           repo-dir: repo
           build-bundle: false
           upload-artifact: false
@@ -81,9 +95,9 @@ jobs:
         run: tar -cf repo.tar repo
 
       - name: Upload repo
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: repo
+          name: repo-${{ matrix.arch }}
           path: repo.tar
           retention-days: 1
           if-no-files-found: error
@@ -108,15 +122,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y flatpak ostree
 
-      - name: Download repo
+      - name: Download repos
         uses: actions/download-artifact@v8
         with:
-          name: repo
+          pattern: repo-*
 
-      - name: Unpack repo
+      - name: Merge repos
         run: |
           mkdir site
-          tar -xf repo.tar -C site
+          ostree --repo=site/repo init --mode=archive-z2
+          for dir in repo-*/; do
+            mkdir "$dir/unpacked"
+            tar -xf "$dir/repo.tar" -C "$dir/unpacked"
+            ostree --repo=site/repo pull-local "$dir/unpacked/repo"
+          done
+          ostree --repo=site/repo refs
 
       - name: Configure Pages
         id: pages
@@ -133,10 +153,28 @@ jobs:
         run: |
           GNUPGHOME="$(mktemp -d)"
           export GNUPGHOME
-          printf '%s' "$FLATPAK_GPG_KEY" | gpg --batch --quiet --import
+
+          # Accept the key however it was stored. A secret pasted through a
+          # form or set with `gh secret set` from a shell variable often
+          # arrives with its newlines escaped, and armored PGP is line
+          # oriented, so gpg rejects it as an invalid armor header. Base64 is
+          # the other common way to carry it. Normalise both here rather than
+          # depending on how the secret happened to be entered.
+          key="$FLATPAK_GPG_KEY"
+          case "$key" in
+            *'BEGIN PGP'*) ;;
+            *) key="$(printf '%s' "$key" | tr -d '[:space:]' | base64 -d 2>/dev/null)" ;;
+          esac
+          case "$key" in
+            *'\n'*) key="$(printf '%b' "$key")" ;;
+          esac
+          printf '%s\n' "$key" | gpg --batch --quiet --import
+          unset key
           keyid="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ { print $10; exit }')"
           if [ -z "$keyid" ]; then
-            echo "FLATPAK_GPG_KEY did not yield a secret key" >&2
+            echo "FLATPAK_GPG_KEY did not yield a secret key." >&2
+            echo "Store it as the output of:" >&2
+            echo "  gpg --export-secret-keys --armor <keyid> | base64 -w0" >&2
             exit 1
           fi
 
@@ -175,10 +213,10 @@ jobs:
           rm -rf "$GNUPGHOME"
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
       - name: Deploy
         id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
