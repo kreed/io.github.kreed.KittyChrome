@@ -150,7 +150,7 @@ jobs:
 
       - name: Configure Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       # Sign every ref, not just the summary. A client verifies the commit of
       # each ref it pulls, so the .Locale and .Debug extensions need signatures
